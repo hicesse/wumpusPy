@@ -1,0 +1,214 @@
+{
+  "presentation_title": "Wumpus World — Complete Code Architecture & Technical Deep Dive",
+  "author": "Antigravity AI Assistant",
+  "project_path": "d:/kodonf/github/wumpus",
+  "total_slides": 12,
+  "slides": [
+    {
+      "slide_number": 1,
+      "layout": "title_slide",
+      "category": "Title",
+      "title": "Wumpus World Simulation",
+      "subtitle": "Complete Code Architecture, Object-Oriented Design & Agent Intelligence",
+      "bullet_points": [
+        "Autonomous Multi-Agent Wumpus World in Python",
+        "Strict Model-View-Controller & Engine Decoupling",
+        "Dumb vs Smart (Knowledge Base + A* Search) Agents",
+        "Deterministic Deep-Cloned Replayability"
+      ],
+      "speaker_notes": "Welcome to the technical architecture walkthrough of the Wumpus World autonomous simulation project. Today we will break down every file, class, method, and object interaction."
+    },
+    {
+      "slide_number": 2,
+      "layout": "two_column",
+      "category": "Architecture",
+      "title": "High-Level Architecture & Separation of Concerns",
+      "column_1_title": "Design Philosophy",
+      "column_1_bullets": [
+        "Zero-Spaghetti Decoupling: UI logic is strictly isolated from core domain simulation.",
+        "Model-View Pattern: Core modules (world.py, agent.py, game.py) return plain data dictionaries.",
+        "Strategy Pattern: Agents are swappable via an abstract interface Agent.decide().",
+        "Replayability: World.clone() allows testing multiple agents on identical random seeds."
+      ],
+      "column_2_title": "Module Responsibilities",
+      "column_2_bullets": [
+        "world.py: Grid bounds, hazard placement, percept calculation, ray-casting.",
+        "agent.py: Abstract Agent, DumbAgent, KnowledgeBase, A* Pathfinder, SmartAgent.",
+        "game.py: Turn resolution loop, action execution, scoring engine.",
+        "ui.py: ASCII board rendering, step telemetry, real-time dual file logging.",
+        "main.py: Interactive session loop, agent factory, replay management."
+      ],
+      "speaker_notes": "The primary design goal was readability and decoupling. If an engineer wants to study A* or logical inference, they only read agent.py without seeing any terminal escape codes or string formatting."
+    },
+    {
+      "slide_number": 3,
+      "layout": "table",
+      "category": "File Overview",
+      "title": "File & Component Directory Map",
+      "headers": ["File Name", "Role / Layer", "Key Classes & Functions", "External Dependencies"],
+      "rows": [
+        ["world.py", "Core Environment / Model", "World, turn_left(), turn_right()", "random, copy"],
+        ["agent.py", "Core AI Strategy / KB", "Agent, DumbAgent, KnowledgeBase, SmartAgent, _astar", "world.py, heapq, random"],
+        ["game.py", "Core Engine / Controller", "Game, scoring constants", "world.py, agent.py, ui.py"],
+        ["ui.py", "Presentation / View", "render_grid(), render_step_log(), dual _print()", "sys, io, os, world.py"],
+        ["main.py", "Application Entry Point", "main(), create_agent()", "world, agent, game, ui"],
+        ["tests.py", "Verification & Test Suite", "SuppressOutput, 8 comprehensive test suites", "pytest / unittest compatible"]
+      ],
+      "speaker_notes": "Notice the clean import hierarchy: world.py has zero internal project dependencies. agent.py depends only on world constants. ui.py only receives plain dicts. game.py orchestrates all three."
+    },
+    {
+      "slide_number": 4,
+      "layout": "diagram_flow",
+      "category": "Execution Lifecycle",
+      "title": "Turn Resolution Loop (Percept -> Act Cycle)",
+      "flow_steps": [
+        "1. Game calls World.get_percepts(agent.pos) -> generates stench, breeze, glitter, bump, scream flags.",
+        "2. Game calls Agent.decide(percepts, world) -> Agent evaluates state & returns (action, thought).",
+        "3. Game deducts action cost (-1) & applies kinematics/inventory mutation via Game._apply_action(action).",
+        "4. Game invokes ui.render_step_log() & ui.render_grid() with clean data snapshot.",
+        "5. Game._check_end_conditions() verifies win/lose/timeout criteria."
+      ],
+      "speaker_notes": "Every turn strictly follows this 5-stage pipeline. The state of the world cannot be illegally altered by the agent; the agent can only propose an action string, which the Game engine evaluates and executes."
+    },
+    {
+      "slide_number": 5,
+      "layout": "content_with_bullets",
+      "category": "Environment Deep Dive",
+      "title": "world.py — Environment Mechanics & Physics",
+      "bullet_points": [
+        "World.__init__(rows, cols, seed): Deterministic PRNG seed ensures reproducible layouts.",
+        "Agent Start: Always fixed at (0, 0) facing EAST (cell (0, 0) is guaranteed hazard-free).",
+        "Procedural Hazards: 1 Wumpus, 1 Gold, and scaled Pits: max(1, (rows * cols * 3) // 16).",
+        "World.get_percepts(): Checks orthogonal neighbors for living Wumpus (stench) or Pits (breeze); detects Gold on current cell (glitter).",
+        "World.resolve_arrow(from_pos, dir): Performs 1D ray-casting until hitting a boundary wall or Wumpus. Kills Wumpus upon direct impact.",
+        "World.clone(): Uses copy.deepcopy to snapshot exact layouts for replay comparisons."
+      ],
+      "speaker_notes": "World encapsulation is airtight. Ray-casting allows shooting arrows across multiple empty cells in cardinal directions."
+    },
+    {
+      "slide_number": 6,
+      "layout": "two_column",
+      "category": "Agent Architecture",
+      "title": "agent.py — Base Agent & DumbAgent",
+      "column_1_title": "Class Agent (Abstract Base)",
+      "column_1_bullets": [
+        "Inherits from abc.ABC with required @abstractmethod decide(percepts, world).",
+        "Tracks state: pos (r, c), direction (0-3), has_arrow, has_gold, is_alive.",
+        "Maintains visited set of tiles to avoid redundant work.",
+        "Encapsulates kinematic methods: do_turn_left(), do_turn_right(), get_forward_pos()."
+      ],
+      "column_2_title": "Class DumbAgent (Loop-Safe Wanderer)",
+      "column_2_bullets": [
+        "Solves the infinite 2-tile ping-pong defect of standard random agents.",
+        "Rule 1: If glitter perceived -> immediately returns GRAB.",
+        "Rule 2: Checks all 4 directions; strongly prioritizes unvisited neighbors.",
+        "Rule 3: If all adjacent tiles have been visited, executes a randomized rotation/movement escape maneuver."
+      ],
+      "speaker_notes": "Even the dumb baseline agent was engineered with visited-state awareness so it doesn't bounce endlessly between (0,0) and (0,1)."
+    },
+    {
+      "slide_number": 7,
+      "layout": "content_with_bullets",
+      "category": "Inference Engine",
+      "title": "agent.py — KnowledgeBase Deductive Reasoning",
+      "bullet_points": [
+        "State Matrix: Tracks per-tile knowledge: UNKNOWN, SAFE, VISITED, POSSIBLE_PIT, POSSIBLE_WUMPUS, POSSIBLE_DANGER, CONFIRMED_PIT, CONFIRMED_WUMPUS.",
+        "Zero-Hazard Deduction: If a visited cell has NO stench and NO breeze, all orthogonal neighbors are guaranteed 100% SAFE.",
+        "Single-Candidate Elimination: If a stench or breeze is felt, and all candidate neighbors except one are proven safe, the remaining candidate is marked CONFIRMED.",
+        "Scream Resonance: Hearing a scream clears all Wumpus danger flags across the entire grid.",
+        "Iterative Propagation: _deduce() runs in a fixed-point loop until no further logical facts can be derived."
+      ],
+      "speaker_notes": "KnowledgeBase implements propositional logic inference without external SAT solvers, making it readable and educational for students."
+    },
+    {
+      "slide_number": 8,
+      "layout": "two_column",
+      "category": "Pathfinding & Planning",
+      "title": "agent.py — SmartAgent & A* Path Planning",
+      "column_1_title": "A* Pathfinder (_astar)",
+      "column_1_bullets": [
+        "Computes optimal paths through known-safe tiles using heapq.",
+        "Manhattan distance heuristic: h(n) = |r1 - r2| + |c1 - c2|.",
+        "Dynamic walkable callback: agent queries self.kb.is_safe(p) to avoid hazardous tiles.",
+        "Path-to-Action translation: _plan_path_actions converts coordinate path into minimal turns and moves."
+      ],
+      "column_2_title": "Decision Hierarchy in decide()",
+      "column_2_bullets": [
+        "1. Ingest new percepts & trigger KB deduction.",
+        "2. Grab gold immediately if glitter detected.",
+        "3. Execute queued action from current plan.",
+        "4. Shoot Wumpus if aligned on same row/col.",
+        "5. A* navigate to nearest unvisited safe tile.",
+        "6. Fallback: calculate risk scores & probe lowest-risk unknown tile."
+      ],
+      "speaker_notes": "SmartAgent doesn't just wander; it formulates multi-step action queues to cross the entire explored board safely to reach new frontiers."
+    },
+    {
+      "slide_number": 9,
+      "layout": "content_with_bullets",
+      "category": "Game Engine",
+      "title": "game.py — Turn Resolution, Rules & Scoring Engine",
+      "bullet_points": [
+        "Action Scoring: Each physical action costs -1 point (step penalization promotes efficiency).",
+        "Wasting Arrow Penalty: Missing a shot deducts an additional -10 points.",
+        "Victory Bonus: Slaying the Wumpus or grabbing Gold awards +1000 points and ends game.",
+        "Catastrophic Penalties: Stepping into a Pit or onto a live Wumpus deducts -1000 points and triggers GAME OVER.",
+        "Timeout Guard: Maximum step limit (default 100) prevents infinite deadlocks.",
+        "Pure Orchestration: Game._apply_action() enforces world boundaries and validates all agent moves."
+      ],
+      "speaker_notes": "Scoring mirrors the classic Russell & Norvig textbook specification with the addition of the arrow victory mechanic."
+    },
+    {
+      "slide_number": 10,
+      "layout": "two_column",
+      "category": "Presentation Layer",
+      "title": "ui.py & main.py — Presentation & Session Management",
+      "column_1_title": "ui.py (Presentation & Dual Logging)",
+      "column_1_bullets": [
+        "ASCII/Unicode Table: Renders dynamic box borders, directional agent arrows, and hazard icons.",
+        "Fog of War: Unvisited tiles hidden with '?' during play; full reveal on game over.",
+        "Dual Output Engine: _print() writes to both terminal and result.txt simultaneously.",
+        "Sanitized Menu Prompts: Validates user input with fallback defaults."
+      ],
+      "column_2_title": "main.py (Session Controller)",
+      "column_2_bullets": [
+        "Interactive CLI: Prompts for grid size and agent mode.",
+        "Factory Method: create_agent() instantiates Dumb or Smart agent.",
+        "Replay Loop: Allows re-running the exact same generated world using world.clone() to benchmark agents.",
+        "Guaranteed Teardown: Uses try...finally to ensure result.txt is cleanly flushed."
+      ],
+      "speaker_notes": "Dual logging allows non-interactive grading or artifact extraction: result.txt contains the complete trace of every move."
+    },
+    {
+      "slide_number": 11,
+      "layout": "table",
+      "category": "Verification & Benchmarks",
+      "title": "Verification & Test Suite Results",
+      "headers": ["Test Name", "Target Component", "Tested Scenario", "Status"],
+      "rows": [
+        ["test_world_percepts", "world.py", "Corner & boundary percepts on deterministic seed 42", "PASS"],
+        ["test_dumb_agent_loop_prevention", "agent.py", "Ensures DumbAgent visits >2 tiles and halts <100 steps", "PASS"],
+        ["test_smart_agent_kb_deduction", "agent.py", "Verifies zero-hazard and breeze deduction logic", "PASS"],
+        ["test_smart_agent_astar", "agent.py", "Optimal pathfinding and wall obstruction checks", "PASS"],
+        ["test_replay_consistency", "world.py", "Independent deep cloning of world state", "PASS"],
+        ["test_full_game_dumb", "game.py", "20-seed batch run: 100% completion rate", "PASS"],
+        ["test_full_game_smart_vs_dumb", "game.py", "20-seed comparison: SmartAgent outperforms DumbAgent", "PASS"],
+        ["test_arrow_mechanic", "world.py", "Ray-cast hit detection and kill resolution", "PASS"]
+      ],
+      "speaker_notes": "All 8 automated test suites pass cleanly. Notice the benchmark: SmartAgent achieves higher win rates and strictly superior score efficiency."
+    },
+    {
+      "slide_number": 12,
+      "layout": "content_with_bullets",
+      "category": "Summary",
+      "title": "Summary & Key Takeaways",
+      "bullet_points": [
+        "Clean Architecture: Textbook realization of decoupled simulation, agent reasoning, and presentation.",
+        "Academic & Production Ready: Easily extensible with new agents (e.g. Q-Learning, LLM Agent).",
+        "Artifact Availability: Full technical summary PDF generated at wumpus_architecture_summary.pdf.",
+        "PPT Conversion: Downstream agents can directly read presentation_deck.json or presentation_slides.md."
+      ],
+      "speaker_notes": "This concludes the technical architecture overview. The accompanying JSON and Markdown slide files provide an immediate bridge to generate PPTX files."
+    }
+  ]
+}

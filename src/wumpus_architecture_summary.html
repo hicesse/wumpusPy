@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Wumpus World — Complete Code Architecture & Technical Specification</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 16mm 14mm 16mm 14mm;
+    @bottom-right {
+      content: counter(page);
+      font-size: 9pt;
+      color: #666;
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    line-height: 1.55;
+    font-size: 10pt;
+    margin: 0;
+    padding: 0;
+  }
+  h1 {
+    font-size: 20pt;
+    color: #0f172a;
+    border-bottom: 2.5px solid #2563eb;
+    padding-bottom: 6px;
+    margin-top: 0;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-size: 13pt;
+    color: #1e40af;
+    border-bottom: 1px solid #cbd5e1;
+    padding-bottom: 4px;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11pt;
+    color: #334155;
+    margin-top: 12px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+  p {
+    margin: 0 0 8px 0;
+  }
+  .subtitle {
+    font-size: 10pt;
+    color: #64748b;
+    margin-bottom: 14px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 8pt;
+    font-weight: 600;
+    border-radius: 4px;
+    margin-right: 4px;
+  }
+  .badge-core { background-color: #dbeafe; color: #1e40af; }
+  .badge-ui { background-color: #fef3c7; color: #92400e; }
+  .badge-app { background-color: #dcfce7; color: #166534; }
+  .badge-method { background-color: #f1f5f9; color: #0f172a; font-family: monospace; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+    font-size: 8.5pt;
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  th, td {
+    padding: 5px 7px;
+    text-align: left;
+    border: 1px solid #cbd5e1;
+    vertical-align: top;
+  }
+  th {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td {
+    background-color: #fcfdfe;
+  }
+  code {
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8.5pt;
+    background-color: #f1f5f9;
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #0f172a;
+  }
+  pre {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #2563eb;
+    padding: 8px 10px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 8pt;
+    line-height: 1.35;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 6px 0 10px 0;
+    page-break-inside: avoid;
+  }
+  .callout {
+    background-color: #eff6ff;
+    border-left: 3px solid #3b82f6;
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 9pt;
+  }
+  .page-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<h1>Wumpus World — Code Architecture & Technical Catalog</h1>
+<p class="subtitle">Complete Structural, Object-Oriented, and Behavioral Analysis | Autonomous Agent Simulation</p>
+
+<div class="callout">
+  <strong>Executive Summary:</strong> The codebase implements a modular, autonomous Wumpus World AI simulation in Python. It enforces strict decoupling between environment simulation (<code>world.py</code>), artificial intelligence reasoning (<code>agent.py</code>), execution control (<code>game.py</code>), and presentation/logging (<code>ui.py</code>). Both Dumb (loop-safe random) and Smart (Knowledge Base + A* search) agents operate polymorphically through an abstract interface.
+</div>
+
+<h2>1. High-Level Architectural Flow & Patterns</h2>
+<pre>
+┌──────────────┐     Instantiates & Loops     ┌──────────────┐
+│   main.py    │ ───────────────────────────> │   game.py    │
+│ (Controller) │ <─── (Replay same world) ─── │(Orchestrator)│
+└──────────────┘                              └──────┬───────┘
+  │            │                                     │
+  │ Spawns     │ Spawns                              │ 1. Emits Percepts
+  ▼            ▼                                     ▼
+┌──────────────┐                             ┌──────────────┐
+│   world.py   │ <─── 3. Applies Action ──── │   world.py   │
+│ (Env Model)  │                             │ (Percepts)   │
+└──────────────┘                             └──────┬───────┘
+                                                    │ 2. Passes Percepts
+                                                    ▼
+┌──────────────┐                             ┌──────────────┐
+│    ui.py     │ <─── 4. Render Payload ──── │   agent.py   │
+│ (View/Log)   │                             │ (Deliberates)│
+└──────────────┘                             └──────────────┘
+</pre>
+
+<h3>Core Design Patterns Used</h3>
+<ul>
+  <li><strong>Model-View Separation:</strong> Core logic modules (<code>World</code>, <code>Agent</code>, <code>Game</code>) have <em>zero terminal or string-drawing dependencies</em>. They return structured data dictionaries consumed by <code>ui.py</code>.</li>
+  <li><strong>Strategy Pattern:</strong> <code>Agent</code> is an Abstract Base Class. <code>DumbAgent</code> and <code>SmartAgent</code> implement identical <code>decide(percepts, world)</code> signatures, allowing seamless runtime interchangeability.</li>
+  <li><strong>Deep State Cloning:</strong> <code>World.clone()</code> provides deterministic replayability by creating deep independent copies of initial environments for direct agent benchmarking.</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2>2. Comprehensive File, Class & Method Catalog</h2>
+
+<h3>File: <code>world.py</code> <span class="badge badge-core">Core Environment</span></h3>
+<p>Handles the grid coordinate system, hazard placement (Wumpus, Pits, Gold), sensory percept generation, arrow trajectory ray-casting, and deep cloning.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Symbol / Member</th>
+      <th style="width: 20%;">Belongs To</th>
+      <th style="width: 35%;">Behavior & Responsibility</th>
+      <th style="width: 20%;">Callers / Interactions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>turn_left(dir)</code><br><code>turn_right(dir)</code></td>
+      <td>Module <code>world.py</code></td>
+      <td>Pure math rotation helpers: <code>(dir ± 1) % 4</code>. Numbers: 0=EAST, 1=NORTH, 2=WEST, 3=SOUTH.</td>
+      <td><code>Agent.do_turn_left()</code>, <code>Agent.do_turn_right()</code>, <code>SmartAgent._turns_to_face()</code></td>
+    </tr>
+    <tr>
+      <td><code>World.__init__(rows, cols, seed)</code></td>
+      <td>Class <code>World</code></td>
+      <td>Initializes board. Generates isolated <code>random.Random(seed)</code>, places Wumpus, Gold, and Pits (scaled to grid size) on non-(0,0) tiles.</td>
+      <td><code>main.main()</code>, <code>tests.py</code></td>
+    </tr>
+    <tr>
+      <td><code>World.is_valid(pos)</code></td>
+      <td>Class <code>World</code></td>
+      <td>Boundary check returning <code>True</code> if <code>0 &lt;= r &lt; rows</code> and <code>0 &lt;= c &lt; cols</code>.</td>
+      <td><code>World.adjacent()</code>, <code>World.resolve_arrow()</code>, <code>Game._apply_action()</code></td>
+    </tr>
+    <tr>
+      <td><code>World.adjacent(pos)</code></td>
+      <td>Class <code>World</code></td>
+      <td>Returns list of valid orthogonal neighbor coordinates <code>(r+dr, c+dc)</code>.</td>
+      <td><code>World.get_percepts()</code></td>
+    </tr>
+    <tr>
+      <td><code>World.get_percepts(pos, bump, scream)</code></td>
+      <td>Class <code>World</code></td>
+      <td>Calculates sensory dict: <code>stench</code> (living Wumpus neighbor), <code>breeze</code> (pit neighbor), <code>glitter</code> (gold on cell), <code>bump</code>, <code>scream</code>.</td>
+      <td><code>Game.run()</code>, <code>tests.py</code></td>
+    </tr>
+    <tr>
+      <td><code>World.resolve_arrow(from_pos, dir)</code></td>
+      <td>Class <code>World</code></td>
+      <td>Ray-casts along facing vector. If hits living Wumpus, sets <code>is_wumpus_alive = False</code> and returns <code>True</code>. Otherwise returns <code>False</code>.</td>
+      <td><code>Game._apply_action()</code>, <code>tests.py</code></td>
+    </tr>
+    <tr>
+      <td><code>World.clone()</code></td>
+      <td>Class <code>World</code></td>
+      <td>Executes <code>copy.deepcopy(self)</code> for reproducible replay sessions.</td>
+      <td><code>main.main()</code>, <code>tests.py</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>File: <code>agent.py</code> <span class="badge badge-core">Agent AI & Knowledge Base</span></h3>
+<p>Contains the abstract <code>Agent</code>, loop-safe <code>DumbAgent</code>, <code>KnowledgeBase</code> inference engine, A* search, and <code>SmartAgent</code>.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Symbol / Member</th>
+      <th style="width: 20%;">Belongs To</th>
+      <th style="width: 35%;">Behavior & Responsibility</th>
+      <th style="width: 20%;">Callers / Interactions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>_astar(start, goal, walkable_fn, neighbors_fn)</code></td>
+      <td>Module <code>agent.py</code></td>
+      <td>Heuristic pathfinding with Manhattan distance: $h(n) = |r_1 - r_2| + |c_1 - c_2|$. Returns optimal tile path or <code>[]</code>.</td>
+      <td><code>SmartAgent._plan_to_nearest()</code>, <code>SmartAgent.decide()</code></td>
+    </tr>
+    <tr>
+      <td><code>Agent.__init__()</code></td>
+      <td>Class <code>Agent(ABC)</code></td>
+      <td>Initializes pos <code>(0,0)</code>, direction <code>EAST</code>, arrow <code>True</code>, gold <code>False</code>, alive <code>True</code>, visited <code>{(0,0)}</code>.</td>
+      <td>Subclass constructors</td>
+    </tr>
+    <tr>
+      <td><code>Agent.do_turn_left()</code><br><code>Agent.do_turn_right()</code></td>
+      <td>Class <code>Agent(ABC)</code></td>
+      <td>Mutates <code>self.direction</code> using <code>turn_left()</code> / <code>turn_right()</code>.</td>
+      <td><code>Game._apply_action()</code></td>
+    </tr>
+    <tr>
+      <td><code>Agent.get_forward_pos()</code></td>
+      <td>Class <code>Agent(ABC)</code></td>
+      <td>Computes target coordinate 1 step ahead in current direction.</td>
+      <td><code>Game._apply_action()</code>, <code>DumbAgent.decide()</code></td>
+    </tr>
+    <tr>
+      <td><code>DumbAgent.decide(percepts, world)</code></td>
+      <td>Class <code>DumbAgent</code></td>
+      <td>Grabs gold on glitter; prefers unvisited neighbors; falls back to random turn/move when surrounded by visited tiles to escape loops.</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+    <tr>
+      <td><code>KnowledgeBase.mark_visited(pos, percepts)</code></td>
+      <td>Class <code>KnowledgeBase</code></td>
+      <td>Records percepts at tile, clears Wumpus threat if scream observed, and triggers <code>_deduce()</code>.</td>
+      <td><code>SmartAgent.decide()</code></td>
+    </tr>
+    <tr>
+      <td><code>KnowledgeBase._deduce()</code></td>
+      <td>Class <code>KnowledgeBase</code></td>
+      <td>Propagates deductive rules: zero hazards mark neighbors <code>SAFE</code>; single unexplained stench marks <code>CONFIRMED_WUMPUS</code>; breeze marks <code>CONFIRMED_PIT</code>.</td>
+      <td>Internal via <code>mark_visited()</code></td>
+    </tr>
+    <tr>
+      <td><code>KnowledgeBase.is_safe(pos)</code></td>
+      <td>Class <code>KnowledgeBase</code></td>
+      <td>Returns <code>True</code> if tile is marked <code>SAFE</code> or <code>VISITED</code>.</td>
+      <td>Passed to <code>_astar</code> walkable callback</td>
+    </tr>
+    <tr>
+      <td><code>SmartAgent.decide(percepts, world)</code></td>
+      <td>Class <code>SmartAgent</code></td>
+      <td>1. Updates KB; 2. Grabs gold if glitter; 3. Pops planned action; 4. Shoots Wumpus if aligned; 5. A* plans to nearest safe unvisited tile; 6. Evaluates minimum risk.</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+    <tr>
+      <td><code>SmartAgent._plan_to_nearest(targets)</code></td>
+      <td>Class <code>SmartAgent</code></td>
+      <td>Finds nearest target via A*, converts tile path to turn/move actions, and formats human reasoning string.</td>
+      <td><code>SmartAgent.decide()</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<h3>File: <code>game.py</code> <span class="badge badge-core">Engine & Rules</span></h3>
+<p>Executes turns, applies movement/shooting physics, tallies scores, and detects victory/death conditions.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Symbol / Member</th>
+      <th style="width: 20%;">Belongs To</th>
+      <th style="width: 35%;">Behavior & Responsibility</th>
+      <th style="width: 20%;">Callers / Interactions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>Game.__init__(world, agent, max_steps)</code></td>
+      <td>Class <code>Game</code></td>
+      <td>Initializes session state, resets score to 0, step counter to 0, and status to <code>None</code>.</td>
+      <td><code>main.main()</code>, <code>tests.py</code></td>
+    </tr>
+    <tr>
+      <td><code>Game.run()</code></td>
+      <td>Class <code>Game</code></td>
+      <td>Primary game loop: gathers percepts, requests agent decision, applies action (-1 pt), renders step to UI, evaluates end state, caps at <code>max_steps</code>.</td>
+      <td><code>main.main()</code>, <code>tests.py</code></td>
+    </tr>
+    <tr>
+      <td><code>Game._apply_action(action)</code></td>
+      <td>Class <code>Game</code></td>
+      <td>Handles <code>MOVE_FORWARD</code> (validates & moves or triggers bump), <code>TURN_LEFT</code>, <code>TURN_RIGHT</code>, <code>GRAB</code> (acquires gold), <code>SHOOT</code> (calls <code>world.resolve_arrow</code>, awards +1000 on kill or -10 on miss).</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+    <tr>
+      <td><code>Game._check_end_conditions()</code></td>
+      <td>Class <code>Game</code></td>
+      <td>Evaluates: live Wumpus contact (-1000, LOSE), Pit contact (-1000, LOSE), Gold possession (+1000, WIN), or Wumpus scream heard (+1000, WIN).</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>File: <code>ui.py</code> <span class="badge badge-ui">Presentation & Dual Logging</span></h3>
+<p>Renders ASCII/Unicode boards and mirrors all telemetry in real time to <code>result.txt</code>.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Symbol / Member</th>
+      <th style="width: 20%;">Belongs To</th>
+      <th style="width: 35%;">Behavior & Responsibility</th>
+      <th style="width: 20%;">Callers / Interactions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>open_result_file()</code><br><code>close_result_file()</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Opens <code>result.txt</code> for overwriting each session; ensures clean buffer flush and close upon exit.</td>
+      <td><code>main.main()</code></td>
+    </tr>
+    <tr>
+      <td><code>_print(*args, **kwargs)</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Drop-in replacement for <code>print()</code> that simultaneously writes to <code>stdout</code> and <code>result.txt</code>.</td>
+      <td>All rendering functions in <code>ui.py</code> and <code>main.py</code></td>
+    </tr>
+    <tr>
+      <td><code>render_grid(...)</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Draws Unicode box grid (<code>┌─┬─┐</code>). Displays agent arrows (<code>► ▲ ◄ ▼</code>), hazards (<code>W, P, G</code>), and hides unknown cells as <code>?</code> unless <code>reveal_all=True</code>.</td>
+      <td><code>Game.run()</code>, <code>render_game_over()</code></td>
+    </tr>
+    <tr>
+      <td><code>render_step_log(...)</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Outputs labeled telemetry blocks: <code>[PERCEPT]</code>, <code>[THINK]</code>, <code>[ACTION]</code>, <code>[SCORE]</code>.</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+    <tr>
+      <td><code>render_game_over(...)</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Prints game summary outcome, metrics, and renders full board with <code>reveal_all=True</code>.</td>
+      <td><code>Game.run()</code></td>
+    </tr>
+    <tr>
+      <td><code>prompt_grid_size()</code><br><code>prompt_agent_mode()</code><br><code>prompt_post_game()</code></td>
+      <td>Module <code>ui.py</code></td>
+      <td>Interactive CLI menus handling input parsing with safe default fallbacks.</td>
+      <td><code>main.main()</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>File: <code>main.py</code> <span class="badge badge-app">Application Entry Point</span></h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width: 25%;">Symbol / Member</th>
+      <th style="width: 20%;">Belongs To</th>
+      <th style="width: 35%;">Behavior & Responsibility</th>
+      <th style="width: 20%;">Callers / Interactions</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>create_agent(mode, rows, cols)</code></td>
+      <td>Module <code>main.py</code></td>
+      <td>Factory function: creates <code>SmartAgent</code> when mode=2, else <code>DumbAgent</code>.</td>
+      <td><code>main.main()</code></td>
+    </tr>
+    <tr>
+      <td><code>main()</code></td>
+      <td>Module <code>main.py</code></td>
+      <td>Session manager: manages replay loop (same world via <code>World.clone()</code>, new world, or exit).</td>
+      <td>Script execution entry point</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<h2>3. Cross-Module Invocation & Dependency Graph</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Caller Method / Function</th>
+      <th>Source File</th>
+      <th>Target Object / Method</th>
+      <th>Target File</th>
+      <th>Purpose & Effect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>main()</code></td>
+      <td><code>main.py</code></td>
+      <td><code>World.clone()</code></td>
+      <td><code>world.py</code></td>
+      <td>Produces deep copy of generated world for identical re-runs.</td>
+    </tr>
+    <tr>
+      <td><code>Game.run()</code></td>
+      <td><code>game.py</code></td>
+      <td><code>World.get_percepts(...)</code></td>
+      <td><code>world.py</code></td>
+      <td>Fetches sensory flags (stench, breeze, glitter, bump, scream).</td>
+    </tr>
+    <tr>
+      <td><code>Game.run()</code></td>
+      <td><code>game.py</code></td>
+      <td><code>Agent.decide(percepts, world)</code></td>
+      <td><code>agent.py</code></td>
+      <td>Invokes strategy method returning <code>(action, thought)</code>.</td>
+    </tr>
+    <tr>
+      <td><code>Game._apply_action()</code></td>
+      <td><code>game.py</code></td>
+      <td><code>Agent.get_forward_pos()</code></td>
+      <td><code>agent.py</code></td>
+      <td>Calculates destination cell before applying kinematic step.</td>
+    </tr>
+    <tr>
+      <td><code>Game._apply_action()</code></td>
+      <td><code>game.py</code></td>
+      <td><code>World.is_valid(pos)</code></td>
+      <td><code>world.py</code></td>
+      <td>Validates if forward movement collides with boundary wall.</td>
+    </tr>
+    <tr>
+      <td><code>Game._apply_action()</code></td>
+      <td><code>game.py</code></td>
+      <td><code>World.resolve_arrow(...)</code></td>
+      <td><code>world.py</code></td>
+      <td>Simulates arrow flight; updates <code>is_wumpus_alive</code> if hit.</td>
+    </tr>
+    <tr>
+      <td><code>SmartAgent.decide()</code></td>
+      <td><code>agent.py</code></td>
+      <td><code>KnowledgeBase.mark_visited()</code></td>
+      <td><code>agent.py</code></td>
+      <td>Ingests sensory data and executes deduction propagation.</td>
+    </tr>
+    <tr>
+      <td><code>SmartAgent._plan_to_nearest()</code></td>
+      <td><code>agent.py</code></td>
+      <td><code>_astar(...)</code></td>
+      <td><code>agent.py</code></td>
+      <td>Calculates shortest safe path to unexplored frontier.</td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
+</html>

@@ -248,6 +248,7 @@ class KnowledgeBase:
         self.wumpus_alive = True
         self.wumpus_location = None      # set when confirmed
 
+# deltarow deltacolom
     def _neighbors(self, pos):
         """Return valid adjacent positions."""
         r, c = pos
